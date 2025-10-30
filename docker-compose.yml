@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: daidaex
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build: ./backend
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend:/app
+      - ./vectorstore:/app/vectorstore
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '8000:8000'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+    environment:
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-devsecret}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/daidaex?schema=public
+      - FASTAPI_URL=http://api:8000
+      - MATCH_W_SEM=${MATCH_W_SEM:-0.6}
+      - MATCH_W_KW=${MATCH_W_KW:-0.25}
+      - MATCH_W_FILT=${MATCH_W_FILT:-0.15}
+      - BM25_ONLY=${BM25_ONLY:-false}
+    depends_on:
+      api:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes: []
+    ports:
+      - '3000:3000'
+
+volumes:
+  db_data:
+

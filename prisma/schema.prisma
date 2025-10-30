@@ -1,0 +1,54 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-arm64-openssl-3.0.x"]
+  engineType    = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Expert {
+  id                 String   @id @default(cuid())
+  name               String
+  company            String?
+  email              String?
+  phone              String?
+  website            String?
+  city               String?
+  state              String?
+  latitude           Float?
+  longitude          Float?
+  specialties        String[]
+  certifications     String[]
+  yearsExperience    Int?
+  rating             Float?
+  projectsCurrent    String[]
+  projectsCompleted  String[]
+  description        String
+  thumbnailUrl       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([state, city])
+  @@index([rating])
+}
+
+model User {
+  id       String @id @default(cuid())
+  email    String @unique
+  name     String?
+  role     String  @default("user")
+  password String
+}
+
+model SearchLog {
+  id        String   @id @default(cuid())
+  query     String
+  filters   Json
+  results   Int
+  tookMs    Int
+  createdAt DateTime @default(now())
+}
+

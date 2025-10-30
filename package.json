@@ -1,0 +1,35 @@
+{
+  "name": "daidaex",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter @daidaex/web dev",
+    "build": "pnpm -r build",
+    "seed": "tsx scripts/seed.ts",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @daidaex/web test:e2e",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write .",
+    "typecheck": "pnpm -r typecheck",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.25",
+    "prettier": "^3.3.3",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "csv-parse": "^5.5.6",
+    "node-fetch": "^3.3.2"
+  }
+}

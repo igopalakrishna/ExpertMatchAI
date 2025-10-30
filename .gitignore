@@ -1,0 +1,40 @@
+# Node / Next / monorepo
+**/node_modules
+**/.next
+**/.turbo
+.pnpm-debug.log*
+npm-debug.log*
+yarn-error.log*
+*.log
+
+# Env (keep examples committed)
+.env
+.env.local
+.env.*.local
+apps/**/.env.local
+backend/.env
+
+# Build / coverage / caches
+dist
+coverage
+**/.cache
+**/.vercel
+playwright-report
+test-results
+
+# Data / vectors (runtime artifacts)
+vectorstore/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/.venv/
+.venv/
+backend/.mypy_cache/
+.ruff_cache/
