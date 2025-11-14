@@ -52,12 +52,16 @@ export async function POST(req: NextRequest) {
     const results = experts.map((e) => ({
       id: e.id,
       name: e.name,
+      company: e.company,
       city: e.city,
       state: e.state,
       specialties: e.specialties,
       rating: e.rating,
       thumbnailUrl: e.thumbnailUrl,
       yearsExperience: e.yearsExperience,
+      email: e.email,
+      phone: e.phone,
+      website: e.website,
       match: { score: combineScores({ sem: 0, kw: 0, filt: 0 }), explain: ['Rate limit fallback'] }
     }));
     const tookMs = Date.now() - start;
@@ -99,12 +103,16 @@ export async function POST(req: NextRequest) {
       return {
         id: e.id,
         name: e.name,
+        company: e.company,
         city: e.city,
         state: e.state,
         specialties: e.specialties,
         rating: e.rating,
         thumbnailUrl: e.thumbnailUrl,
         yearsExperience: e.yearsExperience,
+        email: e.email,
+        phone: e.phone,
+        website: e.website,
         match: { score: combineScores({ sem: 0, kw: 0, filt: filtScore }), explain: [...reasons, 'Default: top-rated'] }
       };
     });
@@ -166,6 +174,7 @@ export async function POST(req: NextRequest) {
   // Optionally query semantic backend
   let semScoresById: Record<string, number> = {};
   let explainById: Record<string, string[]> = {};
+  const fullMatchIds = new Set<string>();
   // Default to enabling semantic if FASTAPI is available
   let bm25Only = (process.env.BM25_ONLY || 'false') === 'true';
   if (bm25Only) {
@@ -196,6 +205,9 @@ export async function POST(req: NextRequest) {
             const w = typeof t.weight === 'number' ? t.weight : (typeof t === 'object' && t.weight ? t.weight : 0);
             return `${t.term ?? t} (${(w as number).toFixed ? (w as number).toFixed(2) : w})`;
           });
+          if (r.allKeywordsMatched) {
+            fullMatchIds.add(r.id);
+          }
         }
       }
     } catch {
@@ -210,20 +222,27 @@ export async function POST(req: NextRequest) {
     const { score: filtScore, reasons } = filterBonus(filters, e);
     const sem = semScoresById[e.id] ?? 0;
     const score = combineScores({ sem, kw: bmNorm, filt: filtScore });
-    const explain = [
+    const explanation = [
       ...(explainById[e.id] || []),
       ...reasons
     ].slice(0, 5);
+    const isFullMatch = fullMatchIds.has(e.id);
+    const explain = isFullMatch ? ['Full keyword match', ...explanation].slice(0, 5) : explanation;
+    const finalScore = isFullMatch ? 100 : score;
     return {
       id: e.id,
       name: e.name,
+      company: e.company,
       city: e.city,
       state: e.state,
       specialties: e.specialties,
       rating: e.rating,
       thumbnailUrl: e.thumbnailUrl,
       yearsExperience: e.yearsExperience,
-      match: { score, explain }
+      email: e.email,
+      phone: e.phone,
+      website: e.website,
+      match: { score: finalScore, explain }
     };
   });
 
@@ -254,12 +273,16 @@ export async function POST(req: NextRequest) {
       return {
         id: e.id,
         name: e.name,
+        company: e.company,
         city: e.city,
         state: e.state,
         specialties: e.specialties,
         rating: e.rating,
         thumbnailUrl: e.thumbnailUrl,
         yearsExperience: e.yearsExperience,
+        email: e.email,
+        phone: e.phone,
+        website: e.website,
         match: { score, explain }
       };
     });

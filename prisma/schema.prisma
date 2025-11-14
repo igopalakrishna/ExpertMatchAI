@@ -33,6 +33,7 @@ model Expert {
 
   @@index([state, city])
   @@index([rating])
+  contactClicks      ContactClickEvent[]
 }
 
 model User {
@@ -50,5 +51,19 @@ model SearchLog {
   results   Int
   tookMs    Int
   createdAt DateTime @default(now())
+}
+
+model ContactClickEvent {
+  id        String   @id @default(cuid())
+  expertId  String
+  userId    String?
+  searchId  String?
+  source    String?
+  clickedAt DateTime @default(now())
+
+  expert    Expert   @relation(fields: [expertId], references: [id], onDelete: Cascade)
+
+  @@index([expertId, clickedAt])
+  @@index([userId])
 }
 

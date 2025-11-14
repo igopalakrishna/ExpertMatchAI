@@ -45,12 +45,16 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
         results: experts.map((e) => ({
           id: e.id,
           name: e.name,
+          company: e.company,
           city: e.city,
           state: e.state,
           specialties: e.specialties,
           rating: e.rating,
           thumbnailUrl: e.thumbnailUrl,
           yearsExperience: e.yearsExperience,
+          email: e.email,
+          phone: e.phone,
+          website: e.website,
           match: { score: 0, explain: ['SSR fallback: top-rated'] }
         })),
         total: experts.length,

@@ -5,7 +5,10 @@ import numpy as np
 import faiss
 import os
 import json
-from typing import List, Dict, Any, Optional
+import re
+from datetime import datetime, timezone
+from uuid import uuid4
+from typing import List, Dict, Any, Optional, Set
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import normalize as l2_normalize
 import joblib
@@ -17,12 +20,14 @@ INDEX_PATH = os.path.join(os.getcwd(), "vectorstore", "experts.index")
 META_PATH = os.path.join(os.getcwd(), "vectorstore", "experts.meta.json")
 TFIDF_VEC_PATH = os.path.join(os.getcwd(), "vectorstore", "experts.tfidf.vectorizer.joblib")
 TFIDF_MAT_PATH = os.path.join(os.getcwd(), "vectorstore", "experts.tfidf.matrix.joblib")
+KEYWORDS_PATH = os.path.join(os.getcwd(), "vectorstore", "experts.keywords.json")
 
 _model = None
 _index = None
 _ids: List[str] = []
 _vectorizer: Optional[TfidfVectorizer] = None
 _tfidf_matrix = None
+_keywords_by_id: Dict[str, List[str]] = {}
 
 
 def get_model():
@@ -47,6 +52,67 @@ def load_tfidf():
         _vectorizer = joblib.load(TFIDF_VEC_PATH)
         _tfidf_matrix = joblib.load(TFIDF_MAT_PATH)
     return _vectorizer is not None and _tfidf_matrix is not None
+
+
+def load_keywords() -> Dict[str, List[str]]:
+    global _keywords_by_id
+    if not _keywords_by_id and os.path.exists(KEYWORDS_PATH):
+        with open(KEYWORDS_PATH, "r") as f:
+            raw = json.load(f)
+        _keywords_by_id = {rid: [str(token) for token in tokens] for rid, tokens in raw.items()}
+    return _keywords_by_id
+
+
+def tokenize_terms(text: str) -> List[str]:
+    if not text:
+        return []
+    return [tok for tok in re.split(r'[^a-z0-9]+', text.lower()) if tok]
+
+
+def flatten_keywords(value: Any) -> List[str]:
+    tokens: List[str] = []
+    if value is None:
+        return tokens
+    if isinstance(value, list):
+        for item in value:
+            tokens.extend(flatten_keywords(item))
+        return tokens
+    if isinstance(value, str):
+        tokens.extend(tokenize_terms(value))
+    else:
+        tokens.extend(tokenize_terms(str(value)))
+    return tokens
+
+
+def dedupe_preserve(seq: List[str]) -> List[str]:
+    seen: Set[str] = set()
+    ordered: List[str] = []
+    for item in seq:
+        if item in seen:
+            continue
+        seen.add(item)
+        ordered.append(item)
+    return ordered
+
+
+def extract_expert_keywords(*fields: Any) -> List[str]:
+    tokens: List[str] = []
+    for field in fields:
+        tokens.extend(flatten_keywords(field))
+    return dedupe_preserve(tokens)
+
+
+def query_keyword_set(text: str) -> Set[str]:
+    return set(tokenize_terms(text))
+
+
+def keywords_fully_match(query_terms: Set[str], expert_terms: List[str]) -> bool:
+    if not query_terms:
+        return False
+    if not expert_terms:
+        return False
+    expert_set = set(expert_terms)
+    return query_terms.issubset(expert_set)
 
 
 @app.get("/health")
@@ -80,13 +146,17 @@ def build_index(_: BuildIn | None = None):
     engine = create_engine(db_url)
 
     with engine.connect() as conn:
-        rows = conn.execute(text("SELECT id, name, company, description, city, state, specialties FROM \"Expert\""))
+        rows = conn.execute(text("""
+            SELECT id, name, company, description, city, state, specialties, certifications, "projectsCurrent", "projectsCompleted"
+            FROM "Expert"
+        """))
         records = list(rows)
 
     texts: List[str] = []
     ids: List[str] = []
+    keyword_map: Dict[str, List[str]] = {}
     for r in records:
-        rid, name, company, desc, city, state, specs = r
+        rid, name, company, desc, city, state, specs, certs, projects_current, projects_completed = r
         full = " ".join([
             name or "",
             company or "",
@@ -97,6 +167,16 @@ def build_index(_: BuildIn | None = None):
         ])
         texts.append(full)
         ids.append(rid)
+        keyword_map[rid] = extract_expert_keywords(
+            specs or [],
+            certs or [],
+            projects_current or [],
+            projects_completed or [],
+            name,
+            company,
+            city,
+            state,
+        )
 
     if len(texts) == 0:
         return {"status": "empty"}
@@ -119,12 +199,18 @@ def build_index(_: BuildIn | None = None):
     joblib.dump(vectorizer, TFIDF_VEC_PATH)
     joblib.dump(tfidf, TFIDF_MAT_PATH)
 
+    os.makedirs(os.path.dirname(KEYWORDS_PATH), exist_ok=True)
+    with open(KEYWORDS_PATH, "w") as f:
+        json.dump(keyword_map, f)
+
     global _index, _ids
     _index = index
     _ids = ids
     global _vectorizer, _tfidf_matrix
     _vectorizer = vectorizer
     _tfidf_matrix = tfidf
+    global _keywords_by_id
+    _keywords_by_id = keyword_map
 
     return {"status": "built", "count": len(ids)}
 
@@ -140,6 +226,8 @@ def search(inp: SearchIn):
     if not load_index():
         return {"results": []}
     load_tfidf()
+    keywords_map = load_keywords()
+    query_terms = query_keyword_set(inp.query)
     model = get_model()
     qv = model.encode([inp.query], normalize_embeddings=True).astype(np.float32)
 
@@ -198,13 +286,21 @@ def search(inp: SearchIn):
     w_kw = float(os.getenv("MATCH_W_KW", "0.25"))
     # filter weight not used here; handled in web layer when filters are applied
     finals = [w_sem * s + w_kw * k for s, k in zip(sem_norm, kw_norm)]
+    full_match_flags = [False] * len(pairs)
+    if query_terms and keywords_map:
+        for i, (doc_idx, _) in enumerate(pairs):
+            rid = _ids[doc_idx]
+            expert_terms = keywords_map.get(rid, [])
+            if keywords_fully_match(query_terms, expert_terms):
+                finals[i] = 1.0
+                full_match_flags[i] = True
     # Normalize to 0-1 then scale to 0-100 for parity with web
     fin_max = max(finals) if finals else 1
     final_norm_0_1 = [f / fin_max if fin_max > 0 else 0 for f in finals]
     final_pct = [round(x * 100, 1) for x in final_norm_0_1]
 
     results = []
-    for (idx, _), s_sem, s_kw, s_final in zip(pairs, sem_norm, kw_norm, final_pct):
+    for i, ((idx, _), s_sem, s_kw, s_final) in enumerate(zip(pairs, sem_norm, kw_norm, final_pct)):
         rid = _ids[idx]
         terms = top_terms_fmt.get(rid, [])
         results.append({
@@ -213,7 +309,39 @@ def search(inp: SearchIn):
             "kwScore": round(s_kw, 4),
             "finalScore": s_final,
             "topTerms": terms,
+            "allKeywordsMatched": full_match_flags[i],
         })
 
     return {"results": results}
+
+
+class ContactClickIn(BaseModel):
+    expert_id: str
+    user_id: Optional[str] = None
+    search_id: Optional[str] = None
+    source: Optional[str] = "search_results"
+    clicked_at: Optional[datetime] = None
+
+
+@app.post("/analytics/contact-click")
+def log_contact_click(inp: ContactClickIn):
+    from sqlalchemy import create_engine, text
+
+    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/daidaex")
+    engine = create_engine(db_url)
+    clicked_at = inp.clicked_at or datetime.now(timezone.utc)
+    payload = {
+        "id": uuid4().hex,
+        "expertId": inp.expert_id,
+        "userId": inp.user_id,
+        "searchId": inp.search_id,
+        "source": inp.source,
+        "clickedAt": clicked_at,
+    }
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO "ContactClickEvent" ("id", "expertId", "userId", "searchId", "source", "clickedAt")
+            VALUES (:id, :expertId, :userId, :searchId, :source, :clickedAt)
+        """), payload)
+    return {"status": "ok"}
 
