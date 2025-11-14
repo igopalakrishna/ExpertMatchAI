@@ -1,8 +1,6 @@
-'use client';
-
-import { useState, MouseEvent } from 'react';
 import Link from 'next/link';
 import { MatchBadge } from './MatchBadge';
+import { ContactPanel } from './ContactPanel';
 
 type Props = {
   expert: {
@@ -22,34 +20,6 @@ type Props = {
 };
 
 export function ExpertCard({ expert }: Props) {
-  const [showContact, setShowContact] = useState(false);
-  const [isLogging, setIsLogging] = useState(false);
-  const [hasTracked, setHasTracked] = useState(false);
-
-  const handleContactClick = async (event: MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const nextState = !showContact;
-    setShowContact(nextState);
-    if (!hasTracked && nextState) {
-      setIsLogging(true);
-      try {
-        await fetch('/api/analytics/contact', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expertId: expert.id, source: 'search_results' })
-        });
-        setHasTracked(true);
-      } catch {
-        // silent failure; analytics are best-effort
-      } finally {
-        setIsLogging(false);
-      }
-    }
-  };
-
-  const hasContactInfo = Boolean(expert.email || expert.phone || expert.website);
-
   return (
     <Link href={`/experts/${expert.id}`} className="block rounded-2xl border bg-white shadow-sm hover:shadow-md transition">
       <div className="relative">
@@ -76,44 +46,14 @@ export function ExpertCard({ expert }: Props) {
           ))}
         </div>
         <div className="mt-4">
-          <button
-            type="button"
-            onClick={handleContactClick}
-            className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 focus:outline-none"
-          >
-            {showContact ? 'Hide contact' : 'Contact expert'}
-            <span className="ml-1">{isLogging && !hasTracked ? '…' : '›'}</span>
-          </button>
-          {showContact && (
-            <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-gray-700 space-y-1">
-              {hasContactInfo ? (
-                <>
-                  {expert.email && (
-                    <div>
-                      <span className="font-medium">Email:</span>{' '}
-                      <a href={`mailto:${expert.email}`} className="text-indigo-700 underline">{expert.email}</a>
-                    </div>
-                  )}
-                  {expert.phone && (
-                    <div>
-                      <span className="font-medium">Phone:</span>{' '}
-                      <a href={`tel:${expert.phone}`} className="text-indigo-700 underline">{expert.phone}</a>
-                    </div>
-                  )}
-                  {expert.website && (
-                    <div>
-                      <span className="font-medium">Website:</span>{' '}
-                      <a href={expert.website} target="_blank" rel="noreferrer" className="text-indigo-700 underline">
-                        {expert.website}
-                      </a>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="text-gray-500">Contact details will be available soon.</p>
-              )}
-            </div>
-          )}
+          <ContactPanel
+            expertId={expert.id}
+            email={expert.email}
+            phone={expert.phone}
+            website={expert.website}
+            source="search_results"
+            compact
+          />
         </div>
       </div>
     </Link>

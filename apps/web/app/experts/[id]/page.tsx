@@ -1,6 +1,7 @@
 import { DonutScore } from '@/components/DonutScore';
 import { KeywordChips } from '@/components/KeywordChips';
 import { WhyThisMatch } from '@/components/WhyThisMatch';
+import { ContactPanel } from '@/components/ContactPanel';
 
 async function getExpert(id: string, q?: string) {
   const base = process.env.NEXTAUTH_URL || 'http://localhost:3000';
@@ -64,6 +65,15 @@ export default async function ExpertPage({ params, searchParams }: { params: { i
           <div className="rounded-2xl border p-6 bg-white shadow-sm">
             <h3 className="font-semibold mb-2">Ratings & Reviews</h3>
             <p className="text-sm text-gray-700">⭐ {data.rating?.toFixed(1) ?? '—'} • {data.yearsExperience ?? '—'} years</p>
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <ContactPanel
+                expertId={data.id}
+                email={data.email}
+                phone={data.phone}
+                website={data.website}
+                source="expert_profile"
+              />
+            </div>
           </div>
           {data.match && (
             <div className="rounded-2xl border p-6 bg-white shadow-sm">
